@@ -81,6 +81,12 @@ async function main() {
   const accessToken = await getAccessToken();
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
 
+  // Temporary diagnostic: check whether the playlist itself is visible to
+  // this token before trying to read its tracks.
+  const metaRes = await fetch('https://api.spotify.com/v1/playlists/' + PLAYLIST_ID + '?fields=id,name,public,owner(id,display_name)', { headers: authHeader });
+  console.log('DIAGNOSTIC playlist meta status:', metaRes.status);
+  console.log('DIAGNOSTIC playlist meta body:', await metaRes.text());
+
   const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
     '/tracks?fields=items(added_at,track(name,artists(name),album(images),external_urls))&limit=50';
   const res = await fetch(url, { headers: authHeader });
