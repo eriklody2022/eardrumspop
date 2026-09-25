@@ -90,6 +90,7 @@ async function main() {
     throw new Error('Failed to fetch playlist tracks: ' + res.status + ' ' + (await res.text()));
   }
   const data = await res.json();
+  console.log('DIAGNOSTIC raw response:', JSON.stringify(data).slice(0, 2000));
   const items = (data.items || []).filter(function (item) { return item && item.track; });
 
   // Most recently added to the playlist first, capped at HOW_MANY — this
