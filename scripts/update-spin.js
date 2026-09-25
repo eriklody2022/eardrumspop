@@ -1,22 +1,34 @@
 // EarDrumsPop — update-spin.js
 //
-// Refreshes today-spin.json with Erik's current (or most recently played)
-// Spotify track. Run on a schedule by .github/workflows/update-spin.yml.
+// Refreshes weekly-spins.json with the current tracks from Erik's public
+// "This Week's Spins" Spotify playlist. Run on a schedule by
+// .github/workflows/update-spin.yml, and any time Erik triggers it
+// manually after updating the playlist.
 //
-// Needs three environment variables, set as GitHub repo secrets and passed
+// Because the playlist is public, this uses Spotify's Client Credentials
+// flow — app-only auth, no personal login and no refresh token needed.
+// Just two environment variables, set as GitHub repo secrets and passed
 // in by the workflow — never hardcoded here, never committed anywhere:
 //   SPOTIFY_CLIENT_ID
 //   SPOTIFY_CLIENT_SECRET
-//   SPOTIFY_REFRESH_TOKEN
 //
-// Only the finished result (song title, artist, album art URL, a Spotify
-// link, and a timestamp) gets written to today-spin.json and committed —
-// that file is public once the site is live, by design. The credentials
-// above never are.
+// Only the finished result (up to 5 tracks: title, artist, album art URL,
+// Spotify link) gets written to weekly-spins.json and committed — that
+// file is public once the site is live, by design.
 
 const fs = require('fs');
 
-async function getAccessToken() {
+// Set this to your playlist's ID. Find it from the playlist's Spotify
+// share link: open the playlist -> Share -> Copy link to playlist. The
+// link looks like https://open.spotify.com/playlist/XXXXXXXXXXXX?si=...
+// — the ID is the part between /playlist/ and the ?. Not sensitive, fine
+// to commit as plain text.
+const PLAYLIST_ID = '6u455r6dUFNri49T7opctR';
+
+// How many tracks to show on the site, most recently added first.
+const HOW_MANY = 5;
+
+async function getAppToken() {
   const basicAuth = Buffer.from(
     process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET
   ).toString('base64');
@@ -27,68 +39,64 @@ async function getAccessToken() {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Authorization': 'Basic ' + basicAuth
     },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: process.env.SPOTIFY_REFRESH_TOKEN
-    })
+    body: new URLSearchParams({ grant_type: 'client_credentials' })
   });
 
   if (!res.ok) {
-    throw new Error('Failed to refresh Spotify access token: ' + res.status + ' ' + (await res.text()));
+    throw new Error('Failed to get Spotify app token: ' + res.status + ' ' + (await res.text()));
   }
   const data = await res.json();
   return data.access_token;
 }
 
-function trackToSpin(track, isPlaying) {
+function trackToSpin(item) {
+  const track = item.track;
   const artists = (track.artists || []).map(function (a) { return a.name; }).join(', ');
   const album = track.album || {};
   const image = (album.images && album.images[0]) ? album.images[0].url : null;
   return {
-    isPlaying: !!isPlaying,
     title: track.name,
     artist: artists,
     albumArt: image,
     url: track.external_urls ? track.external_urls.spotify : null,
-    updatedAt: new Date().toISOString()
+    addedAt: item.added_at
   };
 }
 
 async function main() {
-  const accessToken = await getAccessToken();
+  if (!PLAYLIST_ID || PLAYLIST_ID === 'REPLACE_WITH_YOUR_PLAYLIST_ID') {
+    throw new Error("Set PLAYLIST_ID at the top of scripts/update-spin.js to your playlist's ID first.");
+  }
+
+  const accessToken = await getAppToken();
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
 
-  let spin = null;
-
-  // Try what's playing right now first.
-  const currentRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: authHeader });
-  if (currentRes.status === 200) {
-    const data = await currentRes.json();
-    if (data && data.item) {
-      spin = trackToSpin(data.item, data.is_playing);
-    }
-  } else if (currentRes.status !== 204) {
-    console.warn('currently-playing returned', currentRes.status, await currentRes.text());
+  const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
+    '/tracks?fields=items(added_at,track(name,artists(name),album(images),external_urls))&limit=50';
+  const res = await fetch(url, { headers: authHeader });
+  if (!res.ok) {
+    throw new Error('Failed to fetch playlist tracks: ' + res.status + ' ' + (await res.text()));
   }
+  const data = await res.json();
+  const items = (data.items || []).filter(function (item) { return item && item.track; });
 
-  // Nothing playing right now — fall back to the most recently played track.
-  if (!spin) {
-    const recentRes = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=1', { headers: authHeader });
-    if (!recentRes.ok) {
-      throw new Error('Failed to fetch recently played: ' + recentRes.status + ' ' + (await recentRes.text()));
-    }
-    const data = await recentRes.json();
-    const item = data.items && data.items[0] && data.items[0].track;
-    if (item) spin = trackToSpin(item, false);
-  }
+  // Most recently added to the playlist first, capped at HOW_MANY — this
+  // way it doesn't matter if Erik leaves extra tracks in the playlist or
+  // reorders them by hand.
+  items.sort(function (a, b) { return new Date(b.added_at) - new Date(a.added_at); });
+  const spins = items.slice(0, HOW_MANY).map(trackToSpin);
 
-  if (!spin) {
-    console.log('No current or recent track found on Spotify — leaving today-spin.json unchanged.');
+  if (!spins.length) {
+    console.log('Playlist has no tracks — leaving weekly-spins.json unchanged.');
     return;
   }
 
-  fs.writeFileSync('today-spin.json', JSON.stringify(spin, null, 2) + '\n');
-  console.log('Updated today-spin.json:', spin.title, '—', spin.artist, spin.isPlaying ? '(now playing)' : '(recently played)');
+  fs.writeFileSync('weekly-spins.json', JSON.stringify({
+    updatedAt: new Date().toISOString(),
+    tracks: spins
+  }, null, 2) + '\n');
+
+  console.log('Updated weekly-spins.json with', spins.length, 'track(s).');
 }
 
 main().catch(function (err) {
