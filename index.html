@@ -37,7 +37,7 @@
       <span style="font-family:'Zilla Slab', serif; font-weight:700; font-size:26px; letter-spacing:-0.01em;">EarDrums<span style="color:#c1502e">Pop</span></span>
     </div>
     <nav style="display:flex; align-items:center; gap:36px; font-size:15px; font-weight:600;">
-      <a href="#spin">Today's Spin</a>
+      <a href="#spin">This Week's Spins</a>
       <a href="#scout">The Scout</a>
       <a href="#coming">What's next</a>
     </nav>
@@ -121,31 +121,51 @@
     </div>
   </section>
 
-  <!-- today's spin -->
+  <!-- this week's spins -->
   <section id="spin" style="padding: 60px 64px 68px; background:#ece0c8;">
     <div style="max-width: 1312px; margin: 0 auto; display:flex; justify-content:center;">
       <div style="transform: rotate(-1.6deg); background:#fffaf0; border:1.5px solid rgba(56,42,30,0.14); border-radius:4px; padding:30px 34px; width:420px; max-width:100%; box-shadow: 0 10px 22px rgba(56,42,30,0.16); position:relative;">
         <div style="position:absolute; top:-9px; left:50%; transform:translateX(-50%); width:16px; height:16px; border-radius:999px; background:#c1502e; box-shadow: 0 3px 5px rgba(56,42,30,0.3);"></div>
 
-        <div style="display:inline-block; background:#c1502e; color:#fffaf0; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; padding:5px 12px; border-radius:3px; margin-bottom:18px;">Today's Spin</div>
+        <div style="display:inline-block; background:#c1502e; color:#fffaf0; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; padding:5px 12px; border-radius:3px; margin-bottom:18px;">This Week's Spins</div>
 
-        <a id="spinLink" href="#" target="_blank" rel="noopener" style="display:flex; gap:18px; align-items:center; color:inherit;">
-          <div style="width:76px; height:76px; flex-shrink:0; border-radius:4px; background:#382a1e; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-            <img id="spinArt" alt="" style="display:none; width:100%; height:100%; object-fit:cover;">
-            <svg id="spinArtFallback" width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M9 18V5.5l10-2v11" stroke="#ece0c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-              <circle cx="7" cy="18" r="2.2" stroke="#ece0c8" stroke-width="1.6"/>
-              <circle cx="17" cy="16.5" r="2.2" stroke="#ece0c8" stroke-width="1.6"/>
-            </svg>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:3px;">
-            <span id="spinTitle" style="font-family:'Zilla Slab', serif; font-weight:700; font-size:20px; line-height:1.25;">Vampire Empire</span>
-            <span id="spinArtist" style="font-size:15px; color:rgba(56,42,30,0.7);">Big Thief</span>
-            <span id="spinStatus" style="font-size:12px; color:rgba(56,42,30,0.5); margin-top:2px;">Refreshes from Erik's Spotify</span>
-          </div>
-        </a>
+        <div id="spinsList" style="display:flex; flex-direction:column; gap:14px;">
+          <a class="spin-item" href="#" target="_blank" rel="noopener" style="display:flex; gap:14px; align-items:center; color:inherit;">
+            <div style="width:52px; height:52px; flex-shrink:0; border-radius:4px; background:#382a1e; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+              <img class="spin-item-art" alt="" style="display:none; width:100%; height:100%; object-fit:cover;">
+              <svg class="spin-item-art-fallback" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 18V5.5l10-2v11" stroke="#ece0c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="7" cy="18" r="2.2" stroke="#ece0c8" stroke-width="1.6"/>
+                <circle cx="17" cy="16.5" r="2.2" stroke="#ece0c8" stroke-width="1.6"/>
+              </svg>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+              <span class="spin-item-title" style="font-family:'Zilla Slab', serif; font-weight:700; font-size:16px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Vampire Empire</span>
+              <span class="spin-item-artist" style="font-size:13px; color:rgba(56,42,30,0.7); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Big Thief</span>
+            </div>
+          </a>
+        </div>
 
-        <p style="font-family:'Caveat', cursive; font-size:22px; line-height:1.3; margin: 18px 0 0; color:#382a1e;">Been on repeat all week — give it a spin.</p>
+        <template id="spinItemTemplate">
+          <a class="spin-item" href="#" target="_blank" rel="noopener" style="display:flex; gap:14px; align-items:center; color:inherit;">
+            <div style="width:52px; height:52px; flex-shrink:0; border-radius:4px; background:#382a1e; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+              <img class="spin-item-art" alt="" style="display:none; width:100%; height:100%; object-fit:cover;">
+              <svg class="spin-item-art-fallback" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 18V5.5l10-2v11" stroke="#ece0c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="7" cy="18" r="2.2" stroke="#ece0c8" stroke-width="1.6"/>
+                <circle cx="17" cy="16.5" r="2.2" stroke="#ece0c8" stroke-width="1.6"/>
+              </svg>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+              <span class="spin-item-title" style="font-family:'Zilla Slab', serif; font-weight:700; font-size:16px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+              <span class="spin-item-artist" style="font-size:13px; color:rgba(56,42,30,0.7); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+            </div>
+          </a>
+        </template>
+
+        <span id="spinStatus" style="display:block; font-size:12px; color:rgba(56,42,30,0.5); margin-top:14px;">Refreshes from Erik's playlist</span>
+
+        <p style="font-family:'Caveat', cursive; font-size:22px; line-height:1.3; margin: 14px 0 0; color:#382a1e;">Five on repeat this week — press play.</p>
         <p style="font-family:'Caveat', cursive; font-size:20px; margin: 2px 0 0; text-align:right; color:rgba(56,42,30,0.75);">— Erik</p>
       </div>
     </div>
