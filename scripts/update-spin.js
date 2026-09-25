@@ -5,16 +5,23 @@
 // .github/workflows/update-spin.yml, and any time Erik triggers it
 // manually after updating the playlist.
 //
-// Because the playlist is public, this uses Spotify's Client Credentials
-// flow — app-only auth, no personal login and no refresh token needed.
-// Just two environment variables, set as GitHub repo secrets and passed
-// in by the workflow — never hardcoded here, never committed anywhere:
+// Spotify's app-only auth (Client Credentials) turned out to be blocked
+// from reading playlist tracks — it returns 403 Forbidden even for public
+// playlists, a restriction Spotify tightened a while back. So this uses
+// the same refresh-token flow as the original Today's Spin feature
+// instead: no scope needed beyond what was already authorized, since
+// reading a public playlist doesn't require any special permission once
+// you're using a real user token. Three environment variables, set as
+// GitHub repo secrets and passed in by the workflow — never hardcoded
+// here, never committed anywhere:
 //   SPOTIFY_CLIENT_ID
 //   SPOTIFY_CLIENT_SECRET
+//   SPOTIFY_REFRESH_TOKEN
 //
 // Only the finished result (up to 5 tracks: title, artist, album art URL,
 // Spotify link) gets written to weekly-spins.json and committed — that
-// file is public once the site is live, by design.
+// file is public once the site is live, by design. The credentials above
+// never are.
 
 const fs = require('fs');
 
@@ -28,7 +35,7 @@ const PLAYLIST_ID = '6u455r6dUFNri49T7opctR';
 // How many tracks to show on the site, most recently added first.
 const HOW_MANY = 5;
 
-async function getAppToken() {
+async function getAccessToken() {
   const basicAuth = Buffer.from(
     process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET
   ).toString('base64');
@@ -39,11 +46,14 @@ async function getAppToken() {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Authorization': 'Basic ' + basicAuth
     },
-    body: new URLSearchParams({ grant_type: 'client_credentials' })
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: process.env.SPOTIFY_REFRESH_TOKEN
+    })
   });
 
   if (!res.ok) {
-    throw new Error('Failed to get Spotify app token: ' + res.status + ' ' + (await res.text()));
+    throw new Error('Failed to refresh Spotify access token: ' + res.status + ' ' + (await res.text()));
   }
   const data = await res.json();
   return data.access_token;
@@ -68,7 +78,7 @@ async function main() {
     throw new Error("Set PLAYLIST_ID at the top of scripts/update-spin.js to your playlist's ID first.");
   }
 
-  const accessToken = await getAppToken();
+  const accessToken = await getAccessToken();
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
 
   const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
