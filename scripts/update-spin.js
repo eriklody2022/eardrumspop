@@ -83,14 +83,18 @@ async function main() {
   const accessToken = await getAccessToken();
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
 
+  // Note: no `fields` filter here on purpose — the Spotify /items endpoint
+  // was silently dropping the nested track(...) selector and returning
+  // items with only added_at, so this just takes the full default response
+  // and picks out what it needs below. The playlist is tiny (a handful of
+  // tracks), so there's no real cost to the extra response size.
   const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
-    '/items?fields=items(added_at,track(name,artists(name),album(images),external_urls))&limit=50';
+    '/items?limit=50';
   const res = await fetch(url, { headers: authHeader });
   if (!res.ok) {
     throw new Error('Failed to fetch playlist tracks: ' + res.status + ' ' + (await res.text()));
   }
   const data = await res.json();
-  console.log('DIAGNOSTIC raw response:', JSON.stringify(data).slice(0, 2000));
   const items = (data.items || []).filter(function (item) { return item && item.track; });
 
   // Most recently added to the playlist first, capped at HOW_MANY — this
