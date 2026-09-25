@@ -10,12 +10,15 @@
 // playlists, a restriction Spotify tightened a while back. Reading a
 // playlist's tracks also turns out to need the playlist-read-private
 // scope on the user token even when the playlist itself is public, and
-// the old /tracks endpoint is deprecated in favor of /items (the old one
-// was returning 403s here) — so this uses the same refresh-token flow as
-// the original Today's Spin feature, with a token authorized for that
-// scope, against the current /items endpoint. Three environment
-// variables, set as GitHub repo secrets and passed in by the workflow —
-// never hardcoded here, never committed anywhere:
+// the old /tracks endpoint is deprecated in favor of /items — so this
+// uses the same refresh-token flow as the original Today's Spin feature,
+// with a token authorized for that scope, against the current /items
+// endpoint. One more wrinkle: the /items response nests each track under
+// an `item` field, not the older `track` field (which the docs list as
+// deprecated and which the endpoint doesn't actually populate) — see
+// trackToSpin() below. Three environment variables, set as GitHub repo
+// secrets and passed in by the workflow — never hardcoded here, never
+// committed anywhere:
 //   SPOTIFY_CLIENT_ID
 //   SPOTIFY_CLIENT_SECRET
 //   SPOTIFY_REFRESH_TOKEN
@@ -61,8 +64,11 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-function trackToSpin(item) {
-  const track = item.track;
+function trackToSpin(entry) {
+  // The /items endpoint's response nests the actual track/episode data
+  // under `item`, not the old (deprecated, and in practice absent from
+  // the response) `track` field — see the fix note above main().
+  const track = entry.item;
   const artists = (track.artists || []).map(function (a) { return a.name; }).join(', ');
   const album = track.album || {};
   const image = (album.images && album.images[0]) ? album.images[0].url : null;
@@ -71,7 +77,7 @@ function trackToSpin(item) {
     artist: artists,
     albumArt: image,
     url: track.external_urls ? track.external_urls.spotify : null,
-    addedAt: item.added_at
+    addedAt: entry.added_at
   };
 }
 
@@ -83,11 +89,9 @@ async function main() {
   const accessToken = await getAccessToken();
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
 
-  // Note: no `fields` filter here on purpose — the Spotify /items endpoint
-  // was silently dropping the nested track(...) selector and returning
-  // items with only added_at, so this just takes the full default response
-  // and picks out what it needs below. The playlist is tiny (a handful of
-  // tracks), so there's no real cost to the extra response size.
+  // No `fields` filter here on purpose — keep it simple against the full
+  // default response. The playlist is tiny, so there's no real cost to
+  // the extra response size.
   const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
     '/items?limit=50';
   const res = await fetch(url, { headers: authHeader });
@@ -95,7 +99,10 @@ async function main() {
     throw new Error('Failed to fetch playlist tracks: ' + res.status + ' ' + (await res.text()));
   }
   const data = await res.json();
-  const items = (data.items || []).filter(function (item) { return item && item.track; });
+  // Each entry's track/episode data lives under `item`, not the older,
+  // deprecated `track` field (which the /items endpoint doesn't actually
+  // populate) — see trackToSpin() above.
+  const items = (data.items || []).filter(function (entry) { return entry && entry.item; });
 
   // Most recently added to the playlist first, capped at HOW_MANY — this
   // way it doesn't matter if Erik leaves extra tracks in the playlist or
