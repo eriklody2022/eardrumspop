@@ -9,9 +9,11 @@
 // from reading playlist tracks — it returns 403 Forbidden even for public
 // playlists, a restriction Spotify tightened a while back. Reading a
 // playlist's tracks also turns out to need the playlist-read-private
-// scope on the user token even when the playlist itself is public, so
-// this uses the same refresh-token flow as the original Today's Spin
-// feature, with a token authorized for that scope. Three environment
+// scope on the user token even when the playlist itself is public, and
+// the old /tracks endpoint is deprecated in favor of /items (the old one
+// was returning 403s here) — so this uses the same refresh-token flow as
+// the original Today's Spin feature, with a token authorized for that
+// scope, against the current /items endpoint. Three environment
 // variables, set as GitHub repo secrets and passed in by the workflow —
 // never hardcoded here, never committed anywhere:
 //   SPOTIFY_CLIENT_ID
@@ -82,7 +84,7 @@ async function main() {
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
 
   const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
-    '/tracks?fields=items(added_at,track(name,artists(name),album(images),external_urls))&limit=50';
+    '/items?fields=items(added_at,track(name,artists(name),album(images),external_urls))&limit=50';
   const res = await fetch(url, { headers: authHeader });
   if (!res.ok) {
     throw new Error('Failed to fetch playlist tracks: ' + res.status + ' ' + (await res.text()));
