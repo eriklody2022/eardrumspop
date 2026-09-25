@@ -28,7 +28,11 @@
     'Jazz': 'Jazz'
   };
 
-  const SEARCH_RADIUS_MILES = 75;
+  // Fallback used only if the radius input is missing, empty, or invalid —
+  // the input itself defaults to 75 in the HTML, so this is a last resort.
+  const DEFAULT_RADIUS_MILES = 75;
+  const MIN_RADIUS_MILES = 5;
+  const MAX_RADIUS_MILES = 500;
 
   const state = {
     artists: ['Fleet Foxes', 'Tyler Childers', 'boygenius'],
@@ -111,6 +115,12 @@
     return (data._embedded && data._embedded.events) || [];
   }
 
+  function getRadiusMiles() {
+    const raw = els.radiusInput ? parseInt(els.radiusInput.value, 10) : NaN;
+    if (isNaN(raw)) return DEFAULT_RADIUS_MILES;
+    return Math.min(MAX_RADIUS_MILES, Math.max(MIN_RADIUS_MILES, raw));
+  }
+
   function renderChips() {
     els.artistChips.innerHTML = '';
     state.artists.forEach(function (name, i) {
@@ -168,12 +178,12 @@
     return dateStr + ' · ' + t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
-  function renderResults(events) {
+  function renderResults(events, radiusMiles) {
     els.resultsList.innerHTML = '';
     if (!events.length) {
       const empty = document.createElement('p');
       empty.style.cssText = 'font-size:15px; color:rgba(56,42,30,0.7); margin:0;';
-      empty.textContent = 'No shows found within ' + SEARCH_RADIUS_MILES + ' miles right now. Try a different zip code, add another artist, or check back later.';
+      empty.textContent = 'No shows found within ' + radiusMiles + ' miles right now. Try a different zip code, a wider radius, add another artist, or check back later.';
       els.resultsList.appendChild(empty);
       return;
     }
@@ -213,6 +223,9 @@
       return;
     }
 
+    const radiusMiles = getRadiusMiles();
+    if (els.radiusInput) els.radiusInput.value = String(radiusMiles); // reflect any clamping back in the field
+
     els.resultsSection.style.display = 'block';
     els.resultsList.innerHTML = '';
     els.findBtn.disabled = true;
@@ -229,7 +242,7 @@
             const events = await searchEvents({
               attractionId: attraction.id,
               latlong: geo.lat + ',' + geo.lon,
-              radius: String(SEARCH_RADIUS_MILES),
+              radius: String(radiusMiles),
               unit: 'miles',
               sort: 'date,asc',
               size: '10'
@@ -246,7 +259,7 @@
           const events = await searchEvents({
             classificationName: GENRE_MAP[state.genre],
             latlong: geo.lat + ',' + geo.lon,
-            radius: String(SEARCH_RADIUS_MILES),
+            radius: String(radiusMiles),
             unit: 'miles',
             sort: 'date,asc',
             size: '15'
@@ -266,10 +279,10 @@
       const nearText = geo.city ? (geo.city + (geo.state ? ', ' + geo.state : '')) : zip;
       setStatus(
         events.length
-          ? ('Showing ' + events.length + ' upcoming show' + (events.length === 1 ? '' : 's') + ' within ' + SEARCH_RADIUS_MILES + ' miles of ' + nearText + '.')
-          : ('No shows found within ' + SEARCH_RADIUS_MILES + ' miles of ' + nearText + ' right now.')
+          ? ('Showing ' + events.length + ' upcoming show' + (events.length === 1 ? '' : 's') + ' within ' + radiusMiles + ' miles of ' + nearText + '.')
+          : ('No shows found within ' + radiusMiles + ' miles of ' + nearText + ' right now.')
       );
-      renderResults(events);
+      renderResults(events, radiusMiles);
     } catch (err) {
       console.error(err);
       setStatus(err.message || 'Something went wrong. Try again in a moment.', true);
@@ -281,6 +294,7 @@
 
   function init() {
     els.zipInput = $('zipInput');
+    els.radiusInput = $('radiusInput');
     els.artistInput = $('artistInput');
     els.addArtistBtn = $('addArtistBtn');
     els.artistChips = $('artistChips');
