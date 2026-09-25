@@ -1,35 +1,35 @@
-name: Update Today's Spin
+name: Update This Week's Spins
 
 on:
   schedule:
-    # Every 30 minutes. GitHub may delay scheduled runs a bit under load —
-    # that's fine for this, nothing time-critical depends on it.
-    - cron: "*/30 * * * *"
+    # Every 6 hours. The playlist only changes when Erik updates it, so
+    # there's no need to check more often than this — trigger it manually
+    # (see below) right after updating the playlist for an instant refresh.
+    - cron: "0 */6 * * *"
   workflow_dispatch: {}
-  # Lets you trigger a run manually from the Actions tab any time, e.g.
-  # right after you start playing something, instead of waiting for the
-  # next scheduled run.
+  # Trigger this manually from the Actions tab any time you update the
+  # playlist, so the site picks up the changes right away instead of
+  # waiting for the next scheduled check.
 
 permissions:
   contents: write
 
 jobs:
-  update-spin:
+  update-spins:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch current/recent track from Spotify
+      - name: Fetch this week's tracks from Spotify
         env:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
-          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: node scripts/update-spin.js
 
-      - name: Commit today-spin.json if it changed
+      - name: Commit weekly-spins.json if it changed
         run: |
           git config user.name "eardrumspop-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add today-spin.json
-          git diff --staged --quiet || git commit -m "Update Today's Spin"
+          git add weekly-spins.json
+          git diff --staged --quiet || git commit -m "Update This Week's Spins"
           git push
