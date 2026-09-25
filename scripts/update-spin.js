@@ -7,13 +7,13 @@
 //
 // Spotify's app-only auth (Client Credentials) turned out to be blocked
 // from reading playlist tracks — it returns 403 Forbidden even for public
-// playlists, a restriction Spotify tightened a while back. So this uses
-// the same refresh-token flow as the original Today's Spin feature
-// instead: no scope needed beyond what was already authorized, since
-// reading a public playlist doesn't require any special permission once
-// you're using a real user token. Three environment variables, set as
-// GitHub repo secrets and passed in by the workflow — never hardcoded
-// here, never committed anywhere:
+// playlists, a restriction Spotify tightened a while back. Reading a
+// playlist's tracks also turns out to need the playlist-read-private
+// scope on the user token even when the playlist itself is public, so
+// this uses the same refresh-token flow as the original Today's Spin
+// feature, with a token authorized for that scope. Three environment
+// variables, set as GitHub repo secrets and passed in by the workflow —
+// never hardcoded here, never committed anywhere:
 //   SPOTIFY_CLIENT_ID
 //   SPOTIFY_CLIENT_SECRET
 //   SPOTIFY_REFRESH_TOKEN
@@ -80,12 +80,6 @@ async function main() {
 
   const accessToken = await getAccessToken();
   const authHeader = { 'Authorization': 'Bearer ' + accessToken };
-
-  // Temporary diagnostic: check whether the playlist itself is visible to
-  // this token before trying to read its tracks.
-  const metaRes = await fetch('https://api.spotify.com/v1/playlists/' + PLAYLIST_ID + '?fields=id,name,public,owner(id,display_name)', { headers: authHeader });
-  console.log('DIAGNOSTIC playlist meta status:', metaRes.status);
-  console.log('DIAGNOSTIC playlist meta body:', await metaRes.text());
 
   const url = 'https://api.spotify.com/v1/playlists/' + PLAYLIST_ID +
     '/tracks?fields=items(added_at,track(name,artists(name),album(images),external_urls))&limit=50';
