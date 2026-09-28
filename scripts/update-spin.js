@@ -23,7 +23,7 @@
 //   SPOTIFY_CLIENT_SECRET
 //   SPOTIFY_REFRESH_TOKEN
 //
-// Only the finished result (up to 5 tracks: title, artist, album art URL,
+// Only the finished result (up to 6 tracks: title, artist, album art URL,
 // Spotify link) gets written to weekly-spins.json and committed — that
 // file is public once the site is live, by design. The credentials above
 // never are.
@@ -38,7 +38,7 @@ const fs = require('fs');
 const PLAYLIST_ID = '6u455r6dUFNri49T7opctR';
 
 // How many tracks to show on the site, most recently added first.
-const HOW_MANY = 5;
+const HOW_MANY = 6;
 
 async function getAccessToken() {
   const basicAuth = Buffer.from(
