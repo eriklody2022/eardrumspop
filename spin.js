@@ -1,7 +1,7 @@
 // EarDrumsPop — This Week's Spins
 //
 // Reads weekly-spins.json (title/artist/album art/Spotify link for up to
-// 5 tracks pulled from Erik's public "This Week's Spins" playlist — no
+// 6 tracks pulled from Erik's public "This Week's Spins" playlist — no
 // credentials in this file) and fills in the card. That file is kept up
 // to date by a GitHub Actions workflow (.github/workflows/update-spin.yml)
 // that runs on a schedule, and any time Erik triggers it manually after
