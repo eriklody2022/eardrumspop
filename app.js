@@ -1,9 +1,18 @@
 // EarDrumsPop — concert matcher
 //
 // Flow: zip code -> lat/long (zippopotam.us, cached forever per zip) ->
-// for each artist chip, resolve a Ticketmaster "attraction" ID (cached
-// forever per artist name) -> search events near that lat/long for each
-// attraction ID and/or the selected genre -> merge, dedupe, sort by date.
+// for each artist chip, resolve an artist/performer ID on Ticketmaster AND
+// SeatGeek (cached forever per artist name, per source) -> search events
+// near that lat/long on both sources for each resolved ID and/or the
+// selected genre -> normalize both sources' event shapes into one common
+// shape -> merge, dedupe (same date + venue = same show, however it's
+// ticketed), sort by date.
+//
+// Ticketmaster and SeatGeek cover different, overlapping sets of venues —
+// SeatGeek picks up a fair number of small/independent venues Ticketmaster
+// doesn't carry, plus some of the same big shows (which is exactly what the
+// dedupe step is for). Venues with no ticketing platform at all (DIY spaces,
+// door-price-only bars) won't show up from either — there's no API for that.
 //
 // Everything here runs client-side and caches into localStorage, per-visitor.
 // That's a real limitation worth knowing: it doesn't share a cache across
@@ -26,6 +35,20 @@
     'Metal': 'Metal',
     'Electronic': 'Electronic',
     'Jazz': 'Jazz'
+  };
+
+  // Same idea, but mapped to SeatGeek's genre slugs (genres.slug on their
+  // /events endpoint). Best-effort like the map above — adjust here first
+  // if a genre search comes back thin.
+  const SEATGEEK_GENRE_MAP = {
+    'Indie & Alternative': 'alternative',
+    'Rock': 'rock',
+    'Country': 'country',
+    'Hip-Hop': 'hip-hop',
+    'Folk': 'folk',
+    'Metal': 'metal',
+    'Electronic': 'electronic',
+    'Jazz': 'jazz'
   };
 
   // Fallback used only if the radius input is missing, empty, or invalid —
@@ -115,6 +138,81 @@
     return (data._embedded && data._embedded.events) || [];
   }
 
+  async function resolveSeatGeekPerformer(artistName) {
+    const cacheKey = 'edp_sg_performer_' + artistName.trim().toLowerCase();
+    const cached = cacheGet(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const url = 'https://api.seatgeek.com/2/performers?client_id=' +
+      encodeURIComponent(SEATGEEK_CLIENT_ID) + '&q=' + encodeURIComponent(artistName) + '&per_page=1';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('SeatGeek lookup failed for ' + artistName + '.');
+    const data = await res.json();
+    const performer = data.performers && data.performers[0];
+    const result = performer ? { id: performer.id, name: performer.name } : null;
+    cacheSet(cacheKey, result, null); // an artist's performer ID doesn't change
+    return result;
+  }
+
+  async function searchSeatGeekEvents(params) {
+    const url = 'https://api.seatgeek.com/2/events?client_id=' +
+      encodeURIComponent(SEATGEEK_CLIENT_ID) + '&' + new URLSearchParams(params).toString();
+    const res = await fetch(url);
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("SeatGeek rejected the client_id — double check it in config.js.");
+      throw new Error('SeatGeek search failed (status ' + res.status + ').');
+    }
+    const data = await res.json();
+    return data.events || [];
+  }
+
+  // Both APIs return very differently-shaped event objects. These two
+  // functions boil each down to the same flat shape so the rest of the code
+  // (dedupe, sort, render) never needs to know which source an event came
+  // from.
+  function normalizeTicketmasterEvent(ev) {
+    const venue = ev._embedded && ev._embedded.venues && ev._embedded.venues[0];
+    const start = ev.dates && ev.dates.start;
+    return {
+      name: ev.name,
+      url: ev.url,
+      localDate: start && start.localDate,
+      localTime: start && start.localTime,
+      venueName: venue && venue.name,
+      venueCity: venue && venue.city && venue.city.name
+    };
+  }
+
+  function normalizeSeatGeekEvent(ev) {
+    const venue = ev.venue;
+    let localDate = null;
+    let localTime = null;
+    if (ev.datetime_local && !ev.date_tbd) {
+      const parts = ev.datetime_local.split('T');
+      localDate = parts[0];
+      if (parts[1] && !ev.datetime_tbd) localTime = parts[1].slice(0, 5);
+    }
+    return {
+      name: ev.title || ev.short_title,
+      url: ev.url,
+      localDate: localDate,
+      localTime: localTime,
+      venueName: venue && (venue.name_v2 || venue.name),
+      venueCity: venue && venue.city
+    };
+  }
+
+  // The same real-world show often exists on both Ticketmaster and SeatGeek
+  // (SeatGeek resells plenty of Ticketmaster-issued tickets). Same date +
+  // same venue is treated as the same show; whichever source we see first
+  // for that combination is the one that gets shown, with the other
+  // silently dropped.
+  function dedupeKeyFor(item) {
+    const venueKey = (item.venueName || 'unknown-venue').trim().toLowerCase();
+    const dateKey = item.localDate || ('tbd-' + (item.name || '').trim().toLowerCase());
+    return dateKey + '|' + venueKey;
+  }
+
   function getRadiusMiles() {
     const raw = els.radiusInput ? parseInt(els.radiusInput.value, 10) : NaN;
     if (isNaN(raw)) return DEFAULT_RADIUS_MILES;
@@ -187,22 +285,20 @@
       els.resultsList.appendChild(empty);
       return;
     }
-    events.forEach(function (ev) {
-      const venue = ev._embedded && ev._embedded.venues && ev._embedded.venues[0];
-      const start = ev.dates && ev.dates.start;
-      const venueLine = venue ? (venue.name + (venue.city ? ', ' + venue.city.name : '')) : '';
+    events.forEach(function (item) {
+      const venueLine = item.venueName ? (item.venueName + (item.venueCity ? ', ' + item.venueCity : '')) : '';
 
       const card = document.createElement('div');
       card.style.cssText = 'background:#fffaf0; border:1.5px solid rgba(56,42,30,0.14); border-radius:6px; padding:20px 24px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;';
       card.innerHTML =
         '<div>' +
-          '<div style="font-family:\'Zilla Slab\', serif; font-weight:700; font-size:18px;">' + escapeHtml(ev.name) + '</div>' +
+          '<div style="font-family:\'Zilla Slab\', serif; font-weight:700; font-size:18px;">' + escapeHtml(item.name) + '</div>' +
           '<div style="font-size:14px; color:rgba(56,42,30,0.68); margin-top:4px;">' +
-            escapeHtml(formatDate(start && start.localDate, start && start.localTime)) +
+            escapeHtml(formatDate(item.localDate, item.localTime)) +
             (venueLine ? ' · ' + escapeHtml(venueLine) : '') +
           '</div>' +
         '</div>' +
-        '<a href="' + encodeURI(ev.url || '#') + '" target="_blank" rel="noopener" style="padding:10px 22px; border-radius:6px; background:#c1502e; color:#fffaf0; font-weight:700; font-size:14px; white-space:nowrap; text-decoration:none;">See tickets</a>';
+        '<a href="' + encodeURI(item.url || '#') + '" target="_blank" rel="noopener" style="padding:10px 22px; border-radius:6px; background:#c1502e; color:#fffaf0; font-weight:700; font-size:14px; white-space:nowrap; text-decoration:none;">See tickets</a>';
       els.resultsList.appendChild(card);
     });
   }
@@ -218,8 +314,10 @@
       setStatus('Enter a valid 5-digit zip code.', true);
       return;
     }
-    if (!window.TICKETMASTER_API_KEY) {
-      setStatus("Search isn't configured yet — missing a Ticketmaster API key.", true);
+    const hasTicketmaster = !!window.TICKETMASTER_API_KEY;
+    const hasSeatGeek = !!window.SEATGEEK_CLIENT_ID;
+    if (!hasTicketmaster && !hasSeatGeek) {
+      setStatus("Search isn't configured yet — missing API keys.", true);
       return;
     }
 
@@ -233,46 +331,91 @@
 
     try {
       const geo = await geocodeZip(zip);
-      const eventMap = new Map();
+      const merged = new Map(); // dedupeKey -> normalized event
+
+      function addNormalized(item) {
+        if (!item) return;
+        const key = dedupeKeyFor(item);
+        if (!merged.has(key)) merged.set(key, item);
+      }
 
       for (const artistName of state.artists) {
-        try {
-          const attraction = await resolveAttraction(artistName);
-          if (attraction) {
+        if (hasTicketmaster) {
+          try {
+            const attraction = await resolveAttraction(artistName);
+            if (attraction) {
+              const events = await searchEvents({
+                attractionId: attraction.id,
+                latlong: geo.lat + ',' + geo.lon,
+                radius: String(radiusMiles),
+                unit: 'miles',
+                sort: 'date,asc',
+                size: '10'
+              });
+              events.forEach(function (ev) { addNormalized(normalizeTicketmasterEvent(ev)); });
+            }
+          } catch (innerErr) {
+            console.warn('Ticketmaster search failed for artist "' + artistName + '":', innerErr);
+          }
+        }
+
+        if (hasSeatGeek) {
+          try {
+            const performer = await resolveSeatGeekPerformer(artistName);
+            if (performer) {
+              const events = await searchSeatGeekEvents({
+                'performers.id': String(performer.id),
+                lat: geo.lat,
+                lon: geo.lon,
+                range: radiusMiles + 'mi',
+                sort: 'datetime_local.asc',
+                per_page: '10'
+              });
+              events.forEach(function (ev) { addNormalized(normalizeSeatGeekEvent(ev)); });
+            }
+          } catch (innerErr) {
+            console.warn('SeatGeek search failed for artist "' + artistName + '":', innerErr);
+          }
+        }
+      }
+
+      if (state.genre) {
+        if (hasTicketmaster && GENRE_MAP[state.genre]) {
+          try {
             const events = await searchEvents({
-              attractionId: attraction.id,
+              classificationName: GENRE_MAP[state.genre],
               latlong: geo.lat + ',' + geo.lon,
               radius: String(radiusMiles),
               unit: 'miles',
               sort: 'date,asc',
-              size: '10'
+              size: '15'
             });
-            events.forEach(function (ev) { eventMap.set(ev.id, ev); });
+            events.forEach(function (ev) { addNormalized(normalizeTicketmasterEvent(ev)); });
+          } catch (innerErr) {
+            console.warn('Ticketmaster genre search failed:', innerErr);
           }
-        } catch (innerErr) {
-          console.warn('Search failed for artist "' + artistName + '":', innerErr);
+        }
+
+        if (hasSeatGeek && SEATGEEK_GENRE_MAP[state.genre]) {
+          try {
+            const events = await searchSeatGeekEvents({
+              'genres.slug': SEATGEEK_GENRE_MAP[state.genre],
+              lat: geo.lat,
+              lon: geo.lon,
+              range: radiusMiles + 'mi',
+              sort: 'datetime_local.asc',
+              per_page: '15'
+            });
+            events.forEach(function (ev) { addNormalized(normalizeSeatGeekEvent(ev)); });
+          } catch (innerErr) {
+            console.warn('SeatGeek genre search failed:', innerErr);
+          }
         }
       }
 
-      if (state.genre && GENRE_MAP[state.genre]) {
-        try {
-          const events = await searchEvents({
-            classificationName: GENRE_MAP[state.genre],
-            latlong: geo.lat + ',' + geo.lon,
-            radius: String(radiusMiles),
-            unit: 'miles',
-            sort: 'date,asc',
-            size: '15'
-          });
-          events.forEach(function (ev) { eventMap.set(ev.id, ev); });
-        } catch (innerErr) {
-          console.warn('Genre search failed:', innerErr);
-        }
-      }
-
-      const events = Array.from(eventMap.values()).sort(function (a, b) {
-        const da = (a.dates && a.dates.start && a.dates.start.localDate) || '9999-99-99';
-        const db = (b.dates && b.dates.start && b.dates.start.localDate) || '9999-99-99';
+      const events = Array.from(merged.values()).sort(function (a, b) {
+        const da = a.localDate || '9999-99-99';
+        const db = b.localDate || '9999-99-99';
         return da < db ? -1 : da > db ? 1 : 0;
       });
 
