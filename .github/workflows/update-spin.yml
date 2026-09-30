@@ -1,15 +1,22 @@
-name: Update This Week's Spins
+name: Update This Month's Spins
 
 on:
   schedule:
-    # Every 6 hours. The playlist only changes when Erik updates it, so
-    # there's no need to check more often than this — trigger it manually
-    # (see below) right after updating the playlist for an instant refresh.
-    - cron: "0 */6 * * *"
+    # Once a month, a few hours into the 1st (UTC). The playlist only
+    # changes when Erik updates it for the new month, so there's no need
+    # to check more often than this — trigger it manually (see below)
+    # right after updating the playlist for an instant refresh, which is
+    # also what actually files the outgoing month away into the archive
+    # (see scripts/update-spin.js) if the monthly cron hasn't fired yet.
+    - cron: "0 8 1 * *"
   workflow_dispatch: {}
   # Trigger this manually from the Actions tab any time you update the
   # playlist, so the site picks up the changes right away instead of
-  # waiting for the next scheduled check.
+  # waiting for the next scheduled check. This is also the safety net for
+  # the monthly archive: whichever run first notices the calendar month
+  # changed — the cron job or a manual trigger — is the one that files
+  # the outgoing month's tracks into spins-archive.json before writing
+  # the new month's picks.
 
 permissions:
   contents: write
@@ -20,17 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch this week's tracks from Spotify
+      - name: Fetch this month's tracks from Spotify
         env:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: node scripts/update-spin.js
 
-      - name: Commit weekly-spins.json if it changed
+      - name: Commit current-spins.json / spins-archive.json if they changed
         run: |
           git config user.name "eardrumspop-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add weekly-spins.json
-          git diff --staged --quiet || git commit -m "Update This Week's Spins"
+          git add current-spins.json spins-archive.json
+          git diff --staged --quiet || git commit -m "Update This Month's Spins"
           git push
