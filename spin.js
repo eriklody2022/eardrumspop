@@ -1,13 +1,16 @@
-// EarDrumsPop — This Week's Spins
+// EarDrumsPop — This Month's Spins
 //
-// Reads weekly-spins.json (title/artist/album art/Spotify link for up to
-// 6 tracks pulled from Erik's public "This Week's Spins" playlist — no
+// Reads current-spins.json (title/artist/album art/Spotify link for up to
+// 6 tracks pulled from Erik's public "This Month's Spins" playlist — no
 // credentials in this file) and fills in the card. That file is kept up
 // to date by a GitHub Actions workflow (.github/workflows/update-spin.yml)
-// that runs on a schedule, and any time Erik triggers it manually after
-// updating the playlist.
+// that runs once a month, and any time Erik triggers it manually after
+// updating the playlist. When the calendar month rolls over, that same
+// workflow files the outgoing month's tracks away into spins-archive.json
+// (see spins-archive.html / spins-archive.js) before writing the new
+// month's picks here.
 //
-// If weekly-spins.json is missing (workflow hasn't run yet) or fails to
+// If current-spins.json is missing (workflow hasn't run yet) or fails to
 // load, the card just keeps showing the placeholder already in the HTML —
 // fails quietly rather than breaking the page.
 
@@ -29,7 +32,7 @@
   async function loadSpins() {
     let data;
     try {
-      const res = await fetch('weekly-spins.json', { cache: 'no-store' });
+      const res = await fetch('current-spins.json', { cache: 'no-store' });
       if (!res.ok) return; // no file yet — leave the placeholder in place
       data = await res.json();
     } catch (e) {
@@ -66,7 +69,10 @@
 
     if (statusEl) {
       const when = timeAgo(data.updatedAt);
-      statusEl.textContent = 'From Erik’s playlist' + (when ? ' · ' + when : '');
+      const month = data.monthLabel ? data.monthLabel : '';
+      statusEl.textContent = 'From Erik’s playlist' +
+        (month ? ' · ' + month : '') +
+        (when ? ' · ' + when : '');
     }
   }
 
