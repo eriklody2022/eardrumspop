@@ -276,6 +276,30 @@
     return dateStr + ' · ' + t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
+  // Turns an item's matchedBy list (artist names as typed in the chips, and
+  // genre reasons prefixed "genre:") into one short line explaining why the
+  // show is in the results — e.g. "Matches: Zach Bryan" or "Genre: Rock", or
+  // both if a show happened to satisfy an artist chip AND the selected
+  // genre. Without this, artist-chip matches and genre matches render as
+  // identical rows and there's no way to tell a chip is doing anything.
+  function matchLabel(matchedBy) {
+    if (!matchedBy || !matchedBy.length) return '';
+    const artists = [];
+    const genres = [];
+    matchedBy.forEach(function (reason) {
+      if (reason.indexOf('genre:') === 0) {
+        const g = reason.slice(6);
+        if (genres.indexOf(g) === -1) genres.push(g);
+      } else if (artists.indexOf(reason) === -1) {
+        artists.push(reason);
+      }
+    });
+    const parts = [];
+    if (artists.length) parts.push('Matches: ' + artists.join(', '));
+    if (genres.length) parts.push('Genre: ' + genres.join(', '));
+    return parts.join(' · ');
+  }
+
   function renderResults(events, radiusMiles) {
     els.resultsList.innerHTML = '';
     if (!events.length) {
@@ -287,6 +311,7 @@
     }
     events.forEach(function (item) {
       const venueLine = item.venueName ? (item.venueName + (item.venueCity ? ', ' + item.venueCity : '')) : '';
+      const label = matchLabel(item.matchedBy);
 
       const card = document.createElement('div');
       card.style.cssText = 'background:#fffaf0; border:1.5px solid rgba(56,42,30,0.14); border-radius:6px; padding:20px 24px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;';
@@ -297,6 +322,7 @@
             escapeHtml(formatDate(item.localDate, item.localTime)) +
             (venueLine ? ' · ' + escapeHtml(venueLine) : '') +
           '</div>' +
+          (label ? '<div style="font-size:12px; font-weight:700; color:#c1502e; margin-top:6px;">' + escapeHtml(label) + '</div>' : '') +
         '</div>' +
         '<a href="' + encodeURI(item.url || '#') + '" target="_blank" rel="noopener" style="padding:10px 22px; border-radius:6px; background:#c1502e; color:#fffaf0; font-weight:700; font-size:14px; white-space:nowrap; text-decoration:none;">See tickets</a>';
       els.resultsList.appendChild(card);
@@ -333,10 +359,22 @@
       const geo = await geocodeZip(zip);
       const merged = new Map(); // dedupeKey -> normalized event
 
-      function addNormalized(item) {
+      // `reason` is an artist name as typed in a chip, or "genre:<name>" for
+      // a genre-driven match — matchLabel() turns these into the little
+      // "Matches: ..." / "Genre: ..." tag on each result card. A show that
+      // turns up from more than one chip/pill (e.g. it matches both an
+      // artist and the selected genre) keeps every reason it earned, even
+      // though the dedupe key only keeps the first source's event details.
+      function addNormalized(item, reason) {
         if (!item) return;
         const key = dedupeKeyFor(item);
-        if (!merged.has(key)) merged.set(key, item);
+        const existing = merged.get(key);
+        if (existing) {
+          if (reason && existing.matchedBy.indexOf(reason) === -1) existing.matchedBy.push(reason);
+        } else {
+          item.matchedBy = reason ? [reason] : [];
+          merged.set(key, item);
+        }
       }
 
       for (const artistName of state.artists) {
@@ -352,7 +390,7 @@
                 sort: 'date,asc',
                 size: '10'
               });
-              events.forEach(function (ev) { addNormalized(normalizeTicketmasterEvent(ev)); });
+              events.forEach(function (ev) { addNormalized(normalizeTicketmasterEvent(ev), artistName); });
             }
           } catch (innerErr) {
             console.warn('Ticketmaster search failed for artist "' + artistName + '":', innerErr);
@@ -371,7 +409,7 @@
                 sort: 'datetime_local.asc',
                 per_page: '10'
               });
-              events.forEach(function (ev) { addNormalized(normalizeSeatGeekEvent(ev)); });
+              events.forEach(function (ev) { addNormalized(normalizeSeatGeekEvent(ev), artistName); });
             }
           } catch (innerErr) {
             console.warn('SeatGeek search failed for artist "' + artistName + '":', innerErr);
@@ -390,7 +428,7 @@
               sort: 'date,asc',
               size: '15'
             });
-            events.forEach(function (ev) { addNormalized(normalizeTicketmasterEvent(ev)); });
+            events.forEach(function (ev) { addNormalized(normalizeTicketmasterEvent(ev), 'genre:' + state.genre); });
           } catch (innerErr) {
             console.warn('Ticketmaster genre search failed:', innerErr);
           }
@@ -406,7 +444,7 @@
               sort: 'datetime_local.asc',
               per_page: '15'
             });
-            events.forEach(function (ev) { addNormalized(normalizeSeatGeekEvent(ev)); });
+            events.forEach(function (ev) { addNormalized(normalizeSeatGeekEvent(ev), 'genre:' + state.genre); });
           } catch (innerErr) {
             console.warn('SeatGeek genre search failed:', innerErr);
           }
